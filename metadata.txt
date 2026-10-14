@@ -30,7 +30,7 @@ about=View 360° panoramic photos (photospheres) linked from a layer's attribute
     • Auto-update view: loads panoramas automatically on selection.
     • Show directions: draws a direction sector at the panorama location.
     • Angle field: sets the initial view angle from a layer field.
-    • Viewer: Pannellum or Three.js (macOS supports Three.js only).
+    • Viewer: Pannellum, Three.js, or Canvas, which needs no WebGL (used automatically when WebGL is unavailable).
     • Hidden buttons (bottom right of the viewer, on hover): open in browser, maximise viewer.
 
 tracker=https://github.com/theogatsios/panorama_viewer/issues
@@ -42,6 +42,8 @@ hasProcessingProvider=no
 changelog=1.3 (first release of the Qt6 port):
     - QGIS 4.x / Qt6 support via a QtWebEngine backend; QtWebKit still used on QGIS 3.x / Qt5
     - System-browser fallback when no embedded web engine is available
+    - New "Canvas (no WebGL)" viewer, selected automatically when WebGL is unavailable
+    - Support for smb:// and file:// panorama links, with clear error messages
     - Panorama image served with no-cache headers (no stale images between features)
     - Fixed Three.js viewer not loading images on case-sensitive file systems
     - More robust downloads (missing Content-Length) and plugin unload

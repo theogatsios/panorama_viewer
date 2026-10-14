@@ -69,6 +69,7 @@ from qgis.PyQt.QtWidgets import (
 
 from . import compat
 from .webengine_help import NoWebEngineWidget
+from . import pano_paths
 from .compat import (
     WEB_BACKEND,
     POLYGON_GEOMETRY,
@@ -84,6 +85,7 @@ if WEB_BACKEND == "webkit":
     _fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile)
     QSurfaceFormat.setDefaultFormat(_fmt)
 
+CANVAS_VIEWER = "Canvas (no WebGL)"
 base_folder = os.path.dirname(os.path.realpath(__file__))
 HOST, PORT = "", 8030
 
@@ -130,6 +132,7 @@ class GetPanorama(QWidget):
         self.main_app.pbar.setDisabled(False)
         r = requests.get(url, allow_redirects=True, stream=True, timeout=120)
         if r.status_code != 200:
+            self.main_app.notify("Download failed (HTTP {}): {}".format(r.status_code, url))
             return False
         total_length = int(r.headers.get("content-length") or 0)
         file_name = os.path.join(base_folder, "image.JPG")
@@ -473,6 +476,11 @@ class PanoramaViewer(QMainWindow):
         # webview setup (QtWebKit on Qt5, QtWebEngine on Qt6, or none)
         self.inspector = None
         self.view = create_web_view(self)
+        self.webgl_checked = False   # WebGL availability is tested once per session
+        self.use_browser = False     # user chose "always open in browser"
+        self.last_viewer_url = None
+        if self.view is not None and WEB_BACKEND == "webengine":
+            self.view.loadFinished.connect(self.check_webgl)
 
         # other widgets
         self.lbl_layers = QLabel("Layer:")
@@ -485,7 +493,7 @@ class PanoramaViewer(QMainWindow):
         self.update_layers.setFixedWidth(30)
         self.update_layers.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
 
-        self.viewers = {"Pannellum":'pannellum', "Three.js": 'threejs'}
+        self.viewers = {"Pannellum": 'pannellum', "Three.js": 'threejs', CANVAS_VIEWER: 'canvas'}
         if sys.platform == 'darwin':
             del self.viewers["Pannellum"]
         
@@ -584,12 +592,63 @@ class PanoramaViewer(QMainWindow):
         # )
         # self.view.page().javaScriptConsoleMessage = lambda msg, line, src: print(f"{msg}")
 
+    def check_webgl(self, ok):
+        """After the first viewer page loads, make sure WebGL actually works."""
+        if self.webgl_checked or not ok or self.view is None:
+            return
+        path = self.view.url().path()
+        if not path.startswith("/index_") or path in ("/index_canvas.html", "/index_error.html"):
+            return
+        self.webgl_checked = True
+        js = ("(function(){try{var c=document.createElement('canvas');"
+              "return !!(c.getContext('webgl')||c.getContext('experimental-webgl'));}"
+              "catch(e){return false;}})()")
+        self.view.page().runJavaScript(js, self._webgl_result)
+
+    def _webgl_result(self, has_webgl):
+        if has_webgl:
+            return
+        # no WebGL in the embedded browser: switch to the canvas viewer, which
+        # doesn't need it (changing the combo reloads the current panorama)
+        idx = self.combo_viewer.findText(CANVAS_VIEWER)
+        if idx >= 0:
+            self.combo_viewer.setCurrentIndex(idx)
+        bar = iface.messageBar()
+        item = bar.createMessage(
+            "Panorama Viewer (Qt6)",
+            "WebGL isn't available in QGIS's embedded browser on this system, so the "
+            "plugin switched to the Canvas viewer. For the smoothest view you can also "
+            "open panoramas in your web browser.")
+        btn_once = QPushButton("Open in browser")
+
+        def open_once():
+            if self.last_viewer_url:
+                url = self.last_viewer_url
+                if "silent_mode=1" not in url:
+                    url += "&silent_mode=1"
+                QDesktopServices.openUrl(QUrl(url))
+
+        btn_once.clicked.connect(open_once)
+        item.layout().addWidget(btn_once)
+        bar.pushWidget(item, compat.MSG_INFO, 15)
+
+    def notify(self, message):
+        """Non-blocking warning in the QGIS message bar (safe in auto-update mode)."""
+        try:
+            iface.messageBar().pushWarning("Panorama Viewer (Qt6)", message)
+        except Exception:
+            print("Panorama Viewer (Qt6):", message)
+
     def load_url(self, url):
         """Load a page in the embedded view, or in the system browser
         when no embedded web engine is available."""
-        if self.view is not None:
+        if "/index_error.html" not in url:
+            self.last_viewer_url = url
+        if self.view is not None and not self.use_browser:
             self.view.load(QUrl(url))
         else:
+            if self.view is not None and "silent_mode=1" not in url:
+                url += "&silent_mode=1"
             QDesktopServices.openUrl(QUrl(url))
 
     def run_js(self, code):
@@ -799,7 +858,6 @@ class PanoramaViewer(QMainWindow):
             self.x = cf_geom.asPoint().x()
             self.y = cf_geom.asPoint().y()
             
-            result = urlparse(cf_attr)
             img_get = False
             angle_field = self.direction_field.currentText()
             angle = 0
@@ -813,18 +871,27 @@ class PanoramaViewer(QMainWindow):
                 
                 self.angle = angle
             
-            # panorama path check
-            if cf_attr and os.path.isfile(cf_attr):
-                img_get = GetPanorama(self).get_pano_file(cf_attr, "copy")
-            elif all([result.scheme, result.netloc]):
-                img_get = GetPanorama(self).get_pano_file(cf_attr, "download")
-            else:
-                pass
+            # panorama path check: local / UNC paths, file://, smb:// and http(s)://
+            source = pano_paths.resolve(cf_attr)
+            getter = GetPanorama(self)
+            try:
+                if source.kind == "local":
+                    img_get = getter.get_pano_file(source.value, "copy")
+                elif source.kind == "web":
+                    img_get = getter.get_pano_file(source.value, "download")
+                else:
+                    self.notify(source.message)
+            except Exception as e:  # network errors, permissions, disk full...
+                img_get = False
+                self.notify("Could not load the panorama: {}".format(e))
+            finally:
+                self.pbar.setValue(0)
+                self.pbar.setDisabled(True)
 
             if img_get:
                 self.angle = angle
                 QApplication.processEvents()
-                page = "index_threejs.html" if self.combo_viewer.currentText() == "Three.js" else "index_pannellum.html"
+                page = "index_{}.html".format(self.viewers.get(self.combo_viewer.currentText(), "pannellum"))
                 url = "http://{}:{}/{}?angle={}&zoom={}&controls_visible={}".format(
                     self.httpd.server_host, PORT, page, self.angle, self.zoom, self.controls_visible)
                 if self.view is None:

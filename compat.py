@@ -83,7 +83,26 @@ def _load_webengine():
     raise ImportError("; ".join(errors))
 
 
+# Chromium (inside QtWebEngine) disables WebGL when it distrusts the GPU driver
+# and, since ~Chromium 120, no longer falls back to software WebGL by default.
+# Both Pannellum and Three.js need WebGL, so allow both. Flags are read when
+# QtWebEngine starts, so they must be set before the first page is created.
+# Flags the user already set are kept; set PANORAMA_VIEWER_NO_GPU_FLAGS=1 to opt out.
+WEBENGINE_FLAGS = ("--ignore-gpu-blocklist", "--enable-unsafe-swiftshader")
+
+
+def _add_chromium_flags():
+    import os
+    if os.environ.get("PANORAMA_VIEWER_NO_GPU_FLAGS"):
+        return
+    current = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+    missing = [f for f in WEBENGINE_FLAGS if f not in current.split()]
+    if missing:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join([current] + missing).strip()
+
+
 if WEB_BACKEND is None:
+    _add_chromium_flags()
     try:
         QWebEngineView, QWebEnginePage, QWebEngineSettings, QWebEngineProfile = _load_webengine()
         WEB_BACKEND = "webengine"
@@ -114,6 +133,11 @@ DEGREES_UNIT = _first_attr([
     (Qgis, "DistanceUnit.Degrees"),          # QGIS >= 3.30 / 4.x
     (QgsUnitTypes, "DistanceUnit.Degrees"),
     (QgsUnitTypes, "DistanceDegrees"),       # older QGIS 3.x
+])
+
+MSG_WARNING = _first_attr([
+    (Qgis, "MessageLevel.Warning"),
+    (Qgis, "Warning"),
 ])
 
 MSG_INFO = _first_attr([

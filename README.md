@@ -9,7 +9,7 @@ This is a QGIS 4 / Qt6 port of [Panorama Viewer](https://github.com/pavelperever
 - View 360° photos from local files or web URLs stored in a layer's attributes
 - Draw a direction sector on the map that follows the view in real time
 - Set the initial view angle from a layer field
-- Choose between two viewers (Pannellum / Three.js)
+- Choose between three viewers: Pannellum, Three.js, or Canvas, which needs no WebGL or GPU
 - Expanded view and "open in browser" buttons on the viewer
 
 ## Requirements
@@ -45,6 +45,14 @@ On QGIS 4 (Qt6) the in-QGIS viewer needs the Qt WebEngine Python bindings. When 
 Restart QGIS after installing.
 
 Don't install `PyQt6-WebEngine` with **pip** into a system QGIS. The pip wheel bundles its own Qt, which won't match the Qt QGIS is built with and usually crashes QGIS.
+
+### "Your browser does not have the necessary WebGL support"
+
+Pannellum and Three.js need WebGL. Some QGIS builds start their embedded browser with the GPU switched off (`--disable-gpu`), so WebGL is unavailable whatever flags you set. You can confirm this by opening `chrome://gpu` in a QWebEngineView from the QGIS Python console.
+
+The plugin detects this on the first panorama and switches to the **Canvas (no WebGL)** viewer, which draws the panorama on a plain 2D canvas. You can also pick it manually in the Viewer list. For the smoothest view, the message bar offers to open the panorama in your web browser.
+
+Where QGIS allows it, the plugin also starts the embedded browser with `--ignore-gpu-blocklist --enable-unsafe-swiftshader`, which re-enables WebGL when the GPU driver is only blocklisted. Set `PANORAMA_VIEWER_NO_GPU_FLAGS=1` to turn this off.
 
 ## Building the plugin zip
 

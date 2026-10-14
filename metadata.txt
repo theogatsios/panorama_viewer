@@ -33,9 +33,9 @@ about=View 360° panoramic photos (photospheres) linked from a layer's attribute
     • Viewer: Pannellum, Three.js, or Canvas, which needs no WebGL (used automatically when WebGL is unavailable).
     • Hidden buttons (bottom right of the viewer, on hover): open in browser, maximise viewer.
 
-tracker=https://github.com/theogatsios/panorama_viewer/issues
-repository=https://github.com/theogatsios/panorama_viewer
-homepage=https://github.com/theogatsios/panorama_viewer
+tracker=https://github.com/theogatsios/panorama_viewer_ng/issues
+repository=https://github.com/theogatsios/panorama_viewer_ng
+homepage=https://github.com/theogatsios/panorama_viewer_ng
 
 hasProcessingProvider=no
 

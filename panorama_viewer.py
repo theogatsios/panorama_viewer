@@ -10,41 +10,29 @@
         git sha              : $Format:%H$
         copyright            : (C) 2023 by Pavel Pereverzev
         email                : pasha004@yandex.ru
+        copyright            : (C) 2026 by Theo Gatsios (QGIS 4 / Qt6 port)
+        email                : theogat@protonmail.com
  ***************************************************************************/
 
 /***************************************************************************
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
+ *   the Free Software Foundation; either version 3 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
 """
-# from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
-# from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QApplication
-from qgis.PyQt.QtWidgets import QWidget, QProgressBar, QVBoxLayout
-from qgis._core import QgsApplication
-from qgis.PyQt.QtGui import *
-from qgis.PyQt.QtCore import *
+from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtCore import Qt, QSettings, QTranslator, QCoreApplication
 
-web_widgets_available = False
-try:
-    from qgis.PyQt.QtWebKitWidgets import QWebView, QWebPage, QWebInspector
-    from qgis.PyQt.QtWebKit import QWebSettings
-    from qgis.PyQt.QtGui import QSurfaceFormat
-    web_widgets_available = True
-except:
-    pass
+from .compat import QAction, WEB_BACKEND, MSG_INFO
 
-# Initialize Qt resources from file resources.py
 # Import the code for the dialog
 from .panorama_viewer_dialog import PanoramaViewerDialog
 import os.path
-screen = QApplication.primaryScreen()
-size = screen.size()
-w, h = size.width(), size.height()
+
 
 class PanoramaViewer:
     """QGIS Plugin Implementation."""
@@ -62,7 +50,7 @@ class PanoramaViewer:
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
         # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        locale = (QSettings().value('locale/userLocale') or 'en')[0:2]
         locale_path = os.path.join(
             self.plugin_dir,
             'i18n',
@@ -75,7 +63,7 @@ class PanoramaViewer:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&Panorama Viewer')
+        self.menu = self.tr(u'&Panorama Viewer (Qt6)')
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -175,10 +163,10 @@ class PanoramaViewer:
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-        icon_path = QIcon(os.path.join(self.plugin_dir, "icon.png"))
+        icon_path = os.path.join(self.plugin_dir, "icon.png")
         self.add_action(
             icon_path,
-            text=self.tr(u'Panorama Viewer'),
+            text=self.tr(u'Panorama Viewer (Qt6)'),
             callback=self.run,
             parent=self.iface.mainWindow())
 
@@ -191,23 +179,28 @@ class PanoramaViewer:
         """Removes the plugin menu item and icon from QGIS GUI."""
         if self.dlg:
             self.dlg.close()
+            self.iface.removeDockWidget(self.dlg)
+            self.dlg.deleteLater()
+            self.dlg = None
+            self.plugin_is_opened = False
         for action in self.actions:
             self.iface.removePluginMenu(
-                self.tr(u'&Panorama Viewer'),
+                self.tr(u'&Panorama Viewer (Qt6)'),
                 action)
             self.iface.removeToolBarIcon(action)
 
 
     def run(self):
-        if not self.plugin_is_opened:   
-            if web_widgets_available:
-                self.dlg = PanoramaViewerDialog(self)
-                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dlg) 
-                self.dlg.show()
-                self.plugin_is_opened = True
-            else:
-                QMessageBox.information(None, "Compatibility issue", "This version of QGIS does not support the QtWebKitWidgets components required for the plugin to work.\nA temporary solution is to use QGIS version 3.x.x with Qt5.")
+        if not self.plugin_is_opened:
+            if WEB_BACKEND is None:
+                self.iface.messageBar().pushMessage(
+                    "Panorama Viewer (Qt6)",
+                    "Embedded viewer unavailable, panoramas will open in your browser. "
+                    "The plugin panel shows how to fix this.",
+                    level=MSG_INFO, duration=8)
+            self.dlg = PanoramaViewerDialog(self)
+            self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dlg)
+            self.dlg.show()
+            self.plugin_is_opened = True
         else:
-            self.iface.messageBar().pushMessage("Notification", "Plugin is already opened", level=0)
-
-      
+            self.iface.messageBar().pushMessage("Notification", "Plugin is already opened", level=MSG_INFO)

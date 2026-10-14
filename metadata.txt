@@ -1,69 +1,62 @@
 # This file contains metadata for your plugin.
 
-# This file should be included when you package your plugin.# Mandatory items:
-
 [general]
-name=Panorama Viewer
+name=Panorama Viewer (Qt6)
 qgisMinimumVersion=3.0
-qgisMaximumVersion=3.99
-description=Plugin for viewing 360-degrees panoramic photos in QGIS
-version=1.2
-author=Pavel Pereverzev
-email=pasha004@yandex.ru
+qgisMaximumVersion=4.99
+description=View 360-degree panoramic photos in QGIS 3 and QGIS 4 (Qt6)
+version=1.3
+author=Pavel Pereverzev, Theo Gatsios
+email=theogat@protonmail.com
 
-about=Based on Pannellum JS library and Three.Js.
-    WARNING: right now this plugin is supported by QGIS 3.x.x versions with Qt5. Another QGIS versions with Qt6 has no specific components (Qt webkit tools) to run plugin.
+about=View 360° panoramic photos (photospheres) linked from a layer's attributes, directly inside QGIS, with a live direction sector drawn on the map. Built on the Pannellum and Three.js libraries.
+
+    This is a QGIS 4 / Qt6 port of the "Panorama Viewer" plugin by Pavel Pereverzev
+    (https://github.com/pavelpereverzev/panorama_viewer), maintained by Theo Gatsios.
+
+    Compatibility:
+    • QGIS 3.x (Qt5): uses QtWebKit, as the original plugin.
+    • QGIS 4.x (Qt6): uses QtWebEngine. The Qt WebEngine Python bindings must be installed
+      (e.g. PyQt6-WebEngine / python3-pyqt6.qtwebengine). Without them, panoramas open
+      in the system web browser instead.
 
     Quick guide:
-    1. Install plugin in QGIS.
-    2. Open a layer of any geometry type.
-    3. Add a text field in the attribute table.
-    4. Insert direct links to 360° photos (local files or web) into text field.
-    5. Open plugin, select "Layer" and "Field" with images links
-    7. Select an object on your map.
-    8. Click "View panorama" to see the 360° photo.
+    1. Open a layer of any geometry type.
+    2. Add a text field and fill it with direct links to 360° photos (local paths or web URLs).
+    3. Open the plugin, select the "Layer" and "Field" with the image links.
+    4. Select a feature on the map and click "View panorama".
 
     Options:
-    • Auto-update view: Loads panoramas automatically on selection.
-    • Show directions: Draws a direction sector near the point.
-    • Angle field: Sets a specific base view angle taken from layer field.
-    • Viewer: Choose Pannellum or Three.js (Mac OS supports Three.js only).
-    • Hidden buttons (bottom right on image widget, appear on hover):
-     - Open image in browser.
-     - Maximize image widget size.
+    • Auto-update view: loads panoramas automatically on selection.
+    • Show directions: draws a direction sector at the panorama location.
+    • Angle field: sets the initial view angle from a layer field.
+    • Viewer: Pannellum or Three.js (macOS supports Three.js only).
+    • Hidden buttons (bottom right of the viewer, on hover): open in browser, maximise viewer.
 
-tracker=https://github.com/pavelpereverzev/panorama_viewer/issues
-repository=https://github.com/pavelpereverzev/panorama_viewer
-# End of mandatory metadata
-
-# Recommended items:
+tracker=https://github.com/theogatsios/panorama_viewer/issues
+repository=https://github.com/theogatsios/panorama_viewer
+homepage=https://github.com/theogatsios/panorama_viewer
 
 hasProcessingProvider=no
-# Uncomment the following line and add your changelog:
-changelog=Try to fix panorama preview on some QGIS versions, used a @lepetitchu advice from github issues tab. Added live-updatable panorama direction shapes
 
-# Tags are comma separated with spaces allowed
-tags=panorama,photosphere,360,pannellum,threejs
+changelog=1.3 (first release of the Qt6 port):
+    - QGIS 4.x / Qt6 support via a QtWebEngine backend; QtWebKit still used on QGIS 3.x / Qt5
+    - System-browser fallback when no embedded web engine is available
+    - Panorama image served with no-cache headers (no stale images between features)
+    - Fixed Three.js viewer not loading images on case-sensitive file systems
+    - More robust downloads (missing Content-Length) and plugin unload
+    - New icon
+    Based on Panorama Viewer 1.2 by Pavel Pereverzev.
 
-homepage=https://github.com/pavelpereverzev/panorama_viewer
+tags=panorama,photosphere,360,pannellum,threejs,street view,qt6
+
 category=Plugins
 icon=icon.png
-# experimental flag
 experimental=False
-
-# deprecated flag (applies to the whole plugin, not just a single version)
 deprecated=False
-
-# Since QGIS 3.8, a comma separated list of plugins to be installed
-# (or upgraded) can be specified.
-# Check the documentation for more information.
-# plugin_dependencies=
-
-Category of the plugin: Raster, Vector, Database or Web
-# category=
 
 # If the plugin can run on QGIS Server.
 server=False
 
-# Keep this deprecated flag for QGIS 3.x.x versions which support Qt6
-supportsQt6=False
+# Plugin is compatible with Qt6-based QGIS (3.x Qt6 builds and 4.x)
+supportsQt6=True

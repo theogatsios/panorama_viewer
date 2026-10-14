@@ -1,55 +1,61 @@
-# QGIS Panorama Viewer
+# Panorama Viewer (Qt6)
 
-<img width="590" height="398" alt="screen_pano" src="https://github.com/user-attachments/assets/b954ff35-d314-4a96-ac53-82fe020e4ee0" />
+A QGIS plugin for viewing 360° panoramic photos (photospheres) directly in QGIS, with a live direction sector on the map. Works on **QGIS 3.x (Qt5)** and **QGIS 4.x (Qt6)**. Built on [Pannellum](https://pannellum.org/) and [Three.js](https://threejs.org/).
 
-
-A QGIS plugin which allows to view panoramic images (photospheres, 360° photos) directly in QGIS. Built on [**Pannellum**](https://pannellum.org/) and [**Three.js**](https://threejs.org/) libraries.
+This is a QGIS 4 / Qt6 port of [Panorama Viewer](https://github.com/pavelpereverzev/panorama_viewer) by Pavel Pereverzev.
 
 ## Features
-- View 360° photos from local files or web URLs taken from layers' feature attributes
-- Show direction sector relative to point on map
-- Set custom initial viewing angle
-- Choose between two rendering engines (Pannellum / Three.js)
-- Fullscreen-like expanded view
-- Open current panorama directly in browser
+
+- View 360° photos from local files or web URLs stored in a layer's attributes
+- Draw a direction sector on the map that follows the view in real time
+- Set the initial view angle from a layer field
+- Choose between two viewers (Pannellum / Three.js)
+- Expanded view and "open in browser" buttons on the viewer
+
+## Requirements
+
+On QGIS 3.x with Qt5 the plugin uses QtWebKit and works out of the box.
+
+On QGIS 4.x (Qt6) it uses QtWebEngine, which needs the Qt WebEngine Python bindings. These are included in some installers and are a separate package in others (for example `python3-pyqt6.qtwebengine` on Debian/Ubuntu). Without them the plugin still works, but panoramas open in your system web browser instead of inside QGIS.
 
 ## Quick guide
-1. Install plugin in QGIS.
-2. Open a layer of any geometry type.
-3. Add a text field in the attribute table.
-4. Insert direct links to 360° photos (local files or web) into text field.
-5. Open plugin, select Layer and Field with images links
-7. Select an object on your map.
-8. Click **View panorama** to see the 360° photo.
 
-## Controls & Options
+1. Open a layer of any geometry type.
+2. Add a text field and fill it with direct links to 360° photos (local paths or web URLs).
+3. Open the plugin and select the **Layer** and **Field** with the image links.
+4. Select a feature on the map and click **View panorama**.
 
-**Main Controls**
+**Auto-update view** loads the panorama on every selection. **Show directions** draws the view sector on the map (the project CRS must be projected, not geographic). **Angles field** sets each panorama's initial heading. Hovering the bottom-right corner of the viewer shows buttons to open the panorama in your browser or to hide the controls and maximise the viewer.
 
-| Option | Description |
-|--------|-------------|
-| **Auto-update view** | Automatically loads panorama when selecting a new feature |
-| **Show directions** | Draws a direction sector near the panorama point on the map |
-| **Angle field** | Select a field containing the initial viewing angle for specific panoramas |
-| **Viewer selector** | Choose between *Pannellum* or *Three.js* (Pannellum is unavailable on macOS, only Three.js shown) |
+## Troubleshooting
 
-**Hidden Buttons** (bottom-right corner of the image widget, appear on hover)
+### "Embedded viewer not available"
 
-<img width="122" height="48" alt="screen_pano_corned" src="https://github.com/user-attachments/assets/61f7b748-ed52-4b72-99e2-25c4bf1bf058" />
+On QGIS 4 (Qt6) the in-QGIS viewer needs the Qt WebEngine Python bindings. When they are missing, the plugin panel detects your system and shows the command to install them, with a **Copy** button and a **Check again** button. Panoramas open in your web browser until then.
 
+| System | Command |
+| --- | --- |
+| Debian / Ubuntu / Mint | `sudo apt install python3-pyqt6.qtwebengine` |
+| Fedora | `sudo dnf install python3-pyqt6-webengine` |
+| Arch / Manjaro | `sudo pacman -S python-pyqt6-webengine` |
+| openSUSE | find the name with `zypper search -s WebEngine \| grep -i pyqt` |
+| Windows (OSGeo4W) | OSGeo4W Network Installer → Advanced Install → search "webengine" |
+| Flatpak | not possible inside the Flatpak; install QGIS from your distribution or qgis.org |
 
-| Button | Action |
-|--------|--------|
-| <img width="16" height="16" alt="icon_1" src="https://github.com/user-attachments/assets/d6a0d453-aa7c-4d5d-8b50-8694cdce3f77" /> | Open the current panorama image in your web browser |
-| <img width="16" height="16" alt="icon_2" src="https://github.com/user-attachments/assets/82b02ebc-cab4-423e-ae51-d0d66773be86" /> | Hide part of the plugin interface to expand the panorama viewer to maximum available size |
+Restart QGIS after installing.
 
-## Video preview
+Don't install `PyQt6-WebEngine` with **pip** into a system QGIS. The pip wheel bundles its own Qt, which won't match the Qt QGIS is built with and usually crashes QGIS.
 
-https://github.com/user-attachments/assets/b102d41b-f0cf-41ec-800f-f25a0aca2fd8
+## Building the plugin zip
 
-## Known issues
+```bash
+git archive --prefix=panorama_viewer_qt6/ -o panorama_viewer_qt6.zip HEAD
+```
 
-- works under QGIS 3.x.x versions with Qt5. Another QGIS versions with Qt6 has no specific components (Qt webkit tools) to run plugin.
-- opening image in browser (using <img width="16" height="16" alt="icon_1" src="https://github.com/user-attachments/assets/d6a0d453-aa7c-4d5d-8b50-8694cdce3f77" /> button) may not working sometimes and freeze plugin.
+Install it in QGIS via **Plugins → Manage and Install Plugins → Install from ZIP**.
 
+## Credits and license
 
+Original plugin © 2023 Pavel Pereverzev. QGIS 4 / Qt6 port © 2026 Theo Gatsios.
+
+Licensed under the GNU General Public License v3.0 or later, see [LICENSE](LICENSE). Bundled libraries (Pannellum, three.js) are MIT-licensed, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

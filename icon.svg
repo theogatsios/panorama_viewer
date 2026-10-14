@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- open 360° ring, gap where the view cone exits -->
+  <circle cx="64" cy="64" r="54" fill="none" stroke="#F2B705" stroke-width="10"
+          stroke-linecap="round" stroke-dasharray="292 47.3" transform="rotate(-31 64 64)"/>
+  <!-- tilted horizon / equator -->
+  <ellipse cx="64" cy="64" rx="54" ry="16" fill="none" stroke="#2F5BD3" stroke-width="7"
+           transform="rotate(-12 64 64)"/>
+  <!-- view direction cone -->
+  <path d="M64 64 L41 24.2 A46 46 0 0 1 87 24.2 Z" fill="#E5383B" transform="rotate(35 64 64)"/>
+  <!-- observer -->
+  <circle cx="64" cy="64" r="7.5" fill="#2F5BD3"/>
+  <circle cx="64" cy="64" r="3" fill="#FFFFFF"/>
+</svg>

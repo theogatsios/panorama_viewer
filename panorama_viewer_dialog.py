@@ -10,13 +10,15 @@
         git sha              : $Format:%H$
         copyright            : (C) 2023 by Pavel Pereverzev
         email                : pasha004@yandex.ru
+        copyright            : (C) 2026 by Theo Gatsios (QGIS 4 / Qt6 port)
+        email                : theogat@protonmail.com
  ***************************************************************************/
 
 /***************************************************************************
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
+ *   the Free Software Foundation; either version 3 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
@@ -35,13 +37,18 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 
 from qgis.utils import iface
-from qgis._core import *
-from qgis._gui import *
+from qgis.core import (
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsVectorLayer,
+    QgsCoordinateTransform,
+)
+from qgis.gui import QgsRubberBand
 
-
-from qgis.PyQt.QtWebKitWidgets import QWebView, QWebPage, QWebInspector
-from qgis.PyQt import *
 from qgis.PyQt import QtCore
+from qgis.PyQt.QtCore import Qt, QThread, QUrl
+from qgis.PyQt.QtGui import QColor, QDesktopServices, QSurfaceFormat
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QVBoxLayout,
@@ -57,18 +64,25 @@ from qgis.PyQt.QtWidgets import (
     QMainWindow,
     QSizePolicy,
     QStyle,
-    QLabel
+    QLabel,
 )
-from qgis.PyQt.QtGui import *
-from qgis.PyQt.QtCore import *
 
-# taken from @lepetitchu's comment here https://github.com/pavelpereverzev/panorama_viewer/issues/2#issuecomment-2771276606
-from qgis.PyQt.QtWebKit import QWebSettings
-from qgis.PyQt.QtGui import QSurfaceFormat
-# maybe placed in the constructor of widget
-format = QSurfaceFormat()
-format.setProfile(QSurfaceFormat.CompatibilityProfile)
-QSurfaceFormat.setDefaultFormat(format)
+from . import compat
+from .webengine_help import NoWebEngineWidget
+from .compat import (
+    WEB_BACKEND,
+    POLYGON_GEOMETRY,
+    DEGREES_UNIT,
+    is_string_field,
+)
+
+if WEB_BACKEND == "webkit":
+    # taken from @lepetitchu's comment here
+    # https://github.com/pavelpereverzev/panorama_viewer/issues/2#issuecomment-2771276606
+    # Only needed (and only applied) for the Qt5 WebKit backend.
+    _fmt = QSurfaceFormat()
+    _fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile)
+    QSurfaceFormat.setDefaultFormat(_fmt)
 
 base_folder = os.path.dirname(os.path.realpath(__file__))
 HOST, PORT = "", 8030
@@ -117,18 +131,16 @@ class GetPanorama(QWidget):
         r = requests.get(url, allow_redirects=True, stream=True, timeout=120)
         if r.status_code != 200:
             return False
-        total_length = int(r.headers.get("content-length"))
+        total_length = int(r.headers.get("content-length") or 0)
         file_name = os.path.join(base_folder, "image.JPG")
-        if total_length: 
-            with open(file_name, "wb") as f:
-                total_length = int(total_length)
-                p_step = 100 / total_length * 4096
-                counter = 0
-                for data in r.iter_content(chunk_size=4096):
-                    counter += p_step
-                    f.write(data)
-                    self.main_app.pbar.setValue(int(counter))
-                    QtCore.QCoreApplication.processEvents()
+        with open(file_name, "wb") as f:
+            p_step = 100 / total_length * 4096 if total_length else 0
+            counter = 0
+            for data in r.iter_content(chunk_size=4096):
+                counter += p_step
+                f.write(data)
+                self.main_app.pbar.setValue(min(int(counter), 100))
+                QtCore.QCoreApplication.processEvents()
         self.main_app.pbar.setValue(0)
         self.main_app.pbar.setDisabled(True)
         return True
@@ -139,8 +151,8 @@ class GetPanorama(QWidget):
         file_out = os.path.join(base_folder, "image.JPG")
         file_stats = os.stat(file_in)
         size_b = file_stats.st_size
-        ch_optimal_size = int(size_b / 100)
-        p_step = 100 / size_b * ch_optimal_size
+        ch_optimal_size = max(int(size_b / 100), 4096)
+        p_step = 100 / size_b * ch_optimal_size if size_b else 100
         counter = 0
         open(file_out, "w").close()
         with open(file_in, "rb") as f:
@@ -148,7 +160,7 @@ class GetPanorama(QWidget):
                 with open(file_out, "ab") as fout:
                     fout.write(piece)
                 counter += p_step
-                self.main_app.pbar.setValue(int(counter))
+                self.main_app.pbar.setValue(min(int(counter), 100))
                 QtCore.QCoreApplication.processEvents()
         self.main_app.pbar.setValue(0)
         self.main_app.pbar.setDisabled(True)
@@ -163,12 +175,20 @@ class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def end_headers(self):
+        # the panorama is always served as image.JPG, so never let the
+        # embedded browser (or the system browser) cache it
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
 class HttpDaemon(QtCore.QThread):
     """Simple web server class
     """
 
     def __init__(self, parent, path):
-        super(QThread, self).__init__()
+        super().__init__()
         self.server_path = path
         self.server = None
         self.is_running = False
@@ -235,7 +255,7 @@ class PanoramaViewerDialog(QDockWidget):
         QDockWidget.__init__(self)
         self.wrapper = wrapper
         self.resize(480, 480)
-        self.setWindowTitle("Panorama Viewer")
+        self.setWindowTitle("Panorama Viewer (Qt6)")
         self.setWindowFlags(Qt.WindowType.Tool)
 
         # variables
@@ -302,26 +322,112 @@ class PanoramaViewerDialog(QDockWidget):
         self.wrapper.plugin_is_opened = False
         self.close()
 
-class WebPage(QWebPage):
-    def __init__(self, main_view):
-        super().__init__()
-        self.mv = main_view
+def handle_js_message(mv, msg):
+    """Messages sent from the HTML viewers through console.log()"""
+    if not isinstance(msg, str) or not msg.startswith("{"):
+        return
+    try:
+        data = json.loads(msg)
+    except ValueError:
+        return
 
-    def javaScriptConsoleMessage(self, msg, line, source):
-        if all(n in msg for n in ['yaw', 'pitch', 'zoom']):
-            data = json.loads(msg)
-            self.mv.yaw = data.get('yaw', self.mv.yaw)
-            self.mv.zoom = data.get('zoom', self.mv.zoom)
-            self.mv.pitch = data.get('pitch', self.mv.pitch)
-            self.mv.update_arrow(data)
+    if all(n in data for n in ['yaw', 'pitch', 'zoom']):
+        mv.yaw = data.get('yaw', mv.yaw)
+        mv.zoom = data.get('zoom', mv.zoom)
+        mv.pitch = data.get('pitch', mv.pitch)
+        mv.update_arrow(data)
 
-        if 'hide_controls' in msg:
-            data = json.loads(msg)
-            self.mv.set_controls_visibility(data)
-        
-        if 'open_in_browser' in msg:
-            data = json.loads(msg)
-            QDesktopServices.openUrl(QUrl("http://{}:{}/index_{}.html?angle={}&zoom={}&pitch={}&silent_mode=1".format(self.mv.httpd.server_host, PORT, self.mv.viewers[self.mv.combo_viewer.currentText()], self.mv.yaw, self.mv.zoom, self.mv.pitch)))
+    if 'hide_controls' in data:
+        mv.set_controls_visibility(data)
+
+    if 'open_in_browser' in data:
+        QDesktopServices.openUrl(QUrl(
+            "http://{}:{}/index_{}.html?angle={}&zoom={}&pitch={}&silent_mode=1".format(
+                mv.httpd.server_host, PORT,
+                mv.viewers[mv.combo_viewer.currentText()],
+                mv.yaw, mv.zoom, mv.pitch)))
+
+
+if WEB_BACKEND == "webkit":
+
+    class WebPage(compat.QWebPage):
+        def __init__(self, main_view, parent=None):
+            super().__init__(parent)
+            self.mv = main_view
+
+        def javaScriptConsoleMessage(self, msg, line, source):
+            handle_js_message(self.mv, msg)
+
+elif WEB_BACKEND == "webengine":
+
+    class WebPage(compat.QWebEnginePage):
+        def __init__(self, main_view, profile, parent=None):
+            super().__init__(profile, parent)
+            self.mv = main_view
+
+        def javaScriptConsoleMessage(self, level, msg, line, source):
+            handle_js_message(self.mv, msg)
+
+        def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+            # links clicked inside the viewer go to the system browser
+            if nav_type == compat.QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+                QDesktopServices.openUrl(url)
+                return False
+            return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
+def create_web_view(mv):
+    """Create the embedded browser for the active backend (or None)."""
+    if WEB_BACKEND == "webkit":
+        QWebSettings = compat.QWebSettings
+        view = compat.QWebView(mv)
+        st = view.settings()
+        st.setObjectCacheCapacities(0, 0, 0)
+        for attr in (
+            "WebGLEnabled",
+            "AcceleratedCompositingEnabled",
+            "TiledBackingStoreEnabled",
+            "DeveloperExtrasEnabled",
+            "JavascriptEnabled",
+            "JavascriptCanOpenWindows",
+            "LocalStorageEnabled",
+            "OfflineStorageDatabaseEnabled",
+            "OfflineWebApplicationCacheEnabled",
+        ):
+            st.setAttribute(getattr(QWebSettings, attr), True)
+        mv.page = WebPage(mv, view)
+        view.setPage(mv.page)
+        mv.inspector = compat.QWebInspector()
+
+    elif WEB_BACKEND == "webengine":
+        Profile = compat.QWebEngineProfile
+        WA = compat.QWebEngineSettings.WebAttribute
+        # private, off-the-record profile so we never touch QGIS' default
+        # profile and never cache the (always identically named) panorama
+        mv.web_profile = Profile(mv)
+        mv.web_profile.setHttpCacheType(Profile.HttpCacheType.NoCache)
+        view = compat.QWebEngineView(mv)
+        mv.page = WebPage(mv, mv.web_profile, view)
+        view.setPage(mv.page)
+        st = mv.page.settings()
+        for attr in (
+            "JavascriptEnabled",
+            "JavascriptCanOpenWindows",
+            "LocalStorageEnabled",
+            "WebGLEnabled",
+            "Accelerated2dCanvasEnabled",
+            "LocalContentCanAccessRemoteUrls",
+        ):
+            if hasattr(WA, attr):
+                st.setAttribute(getattr(WA, attr), True)
+    else:
+        return None
+
+    sp = view.sizePolicy()
+    sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+    view.setSizePolicy(sp)
+    return view
+
 
 class PanoramaViewer(QMainWindow):
     """Widget interface """
@@ -331,13 +437,13 @@ class PanoramaViewer(QMainWindow):
         
         # init settings
         self.wrapper = parent
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setGeometry(800, 650, 1200, 880)
 
-        self.rubberBandArrow = QgsRubberBand(iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+        self.rubberBandArrow = QgsRubberBand(iface.mapCanvas(), POLYGON_GEOMETRY)
         self.rubberBandArrow.setColor(QColor(0,0,0,255))
         self.rubberBandArrow.setFillColor(QColor(0,0,0,100))
-        self.rubberBandArrow.setLineStyle(1)
+        self.rubberBandArrow.setLineStyle(Qt.PenStyle.SolidLine)
         self.rubberBandArrow.setWidth(2)
 
         self.yaw = 0.0
@@ -361,33 +467,12 @@ class PanoramaViewer(QMainWindow):
         browser_layout = QHBoxLayout()
         centralLayout = QVBoxLayout()
         control_layout = QVBoxLayout()
-        grid_layout = QGridLayout(self)
+        grid_layout = QGridLayout()
         grid_layout.setSpacing(10)
 
-        # webview setup
-        self.view = QWebView(self)
-        self.view.settings().setAttribute(QWebSettings.DeveloperExtrasEnabled, True)
-        sp = self.view.sizePolicy()
-        sp.setVerticalPolicy(QSizePolicy.Expanding)
-        self.view.setSizePolicy(sp)
-        self.view.settings().setObjectCacheCapacities(0, 0, 0)
-
-        # self.view = browser.settings()
-        self.view.settings().setAttribute(QWebSettings.WebGLEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.AcceleratedCompositingEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.TiledBackingStoreEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.DeveloperExtrasEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.JavascriptEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.JavascriptCanOpenWindows, True)
-        self.view.settings().setAttribute(QWebSettings.LocalStorageEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.OfflineStorageDatabaseEnabled, True)
-        self.view.settings().setAttribute(QWebSettings.OfflineWebApplicationCacheEnabled, True)
-
-        self.page = WebPage(self)
-        self.view.setPage(self.page)
-        self.inspector = QWebInspector()
-        
-        # self.view.page().setDevToolsPage(self.inspector.page())
+        # webview setup (QtWebKit on Qt5, QtWebEngine on Qt6, or none)
+        self.inspector = None
+        self.view = create_web_view(self)
 
         # other widgets
         self.lbl_layers = QLabel("Layer:")
@@ -398,7 +483,7 @@ class PanoramaViewer(QMainWindow):
         
         self.update_layers = QPushButton()
         self.update_layers.setFixedWidth(30)
-        self.update_layers.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        self.update_layers.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
 
         self.viewers = {"Pannellum":'pannellum', "Three.js": 'threejs'}
         if sys.platform == 'darwin':
@@ -435,7 +520,14 @@ class PanoramaViewer(QMainWindow):
 
         # layout setup
         # 1. browser widget
-        browser_layout.addWidget(self.view)
+        if self.view is not None:
+            browser_layout.addWidget(self.view)
+        else:
+            self.no_view_label = NoWebEngineWidget(compat.WEB_BACKEND_ERROR)
+            browser_layout.addWidget(self.no_view_label)
+            # auto-update would spawn a browser tab per selection
+            self.auto_update.setDisabled(True)
+            self.auto_update.setToolTip("Not available without an embedded web engine")
 
         # 2. layer-field selectors
         grid_layout.addWidget(self.lbl_layers,    1, 1, 1, 1)
@@ -483,13 +575,31 @@ class PanoramaViewer(QMainWindow):
         self.httpd.start()
 
 
-        self.inspector.setPage(self.view.page())
+        if self.inspector is not None:
+            self.inspector.setPage(self.view.page())
 
         # inspector setup for debugging purposes, can be commented out in production
         # self.view.page().settings().setAttribute(
         #     self.view.page().settings().WebAttribute.DeveloperExtrasEnabled, True
         # )
         # self.view.page().javaScriptConsoleMessage = lambda msg, line, src: print(f"{msg}")
+
+    def load_url(self, url):
+        """Load a page in the embedded view, or in the system browser
+        when no embedded web engine is available."""
+        if self.view is not None:
+            self.view.load(QUrl(url))
+        else:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def run_js(self, code):
+        """Run JavaScript in the current page on any backend."""
+        if self.view is None:
+            return
+        if WEB_BACKEND == "webkit":
+            self.view.page().mainFrame().evaluateJavaScript(code)
+        else:
+            self.view.page().runJavaScript(code)
 
     def set_controls_visibility(self, data):
         self.controls_visible = data.get('hide_controls', False)
@@ -546,9 +656,7 @@ class PanoramaViewer(QMainWindow):
                 self.angle = int(self.angle)
             except: 
                 self.angle = 0.0
-            self.view.page().mainFrame().evaluateJavaScript(
-                "rotateToAngle({});".format(self.angle)
-            )
+            self.run_js("rotateToAngle({});".format(self.angle))
             
     def set_directrions(self):
         if not self.show_directrions.isChecked():
@@ -556,7 +664,7 @@ class PanoramaViewer(QMainWindow):
             self.rubberBandArrow.reset()
         else:
             current_crs = QgsProject.instance().crs().authid()
-            if QgsProject.instance().crs().mapUnits() == QgsUnitTypes.DistanceUnit.Degrees:
+            if QgsProject.instance().crs().mapUnits() == DEGREES_UNIT:
                 self.warning_message("The current project coordinate system {} has degrees map units.\nTo view directions, please switch the project CRS to a projected (metric) one, such as EPSG:3857.".format(current_crs))
             self.direction_field.setDisabled(False)
             self.update_arrow({'yaw': self.yaw, 'zoom': self.zoom})
@@ -626,7 +734,7 @@ class PanoramaViewer(QMainWindow):
         i = 0
         for layer_id, layer in self.layer_data.items():
             self.cmb_layers.addItem(layer.name())
-            self.cmb_layers.setItemData(i, layer_id, QtCore.Qt.ToolTipRole)
+            self.cmb_layers.setItemData(i, layer_id, Qt.ItemDataRole.ToolTipRole)
             self.cmb_layers.setItemData(i, layer)
             i += 1
         self.update_current_layer()
@@ -642,7 +750,7 @@ class PanoramaViewer(QMainWindow):
         self.current_layer = self.cmb_layers.currentData()
         if self.current_layer:
             layer_fields = [
-                f.name() for f in self.current_layer.fields() if f.type() == 10
+                f.name() for f in self.current_layer.fields() if is_string_field(f)
             ]
             
             self.cmb_fields.clear()
@@ -716,12 +824,14 @@ class PanoramaViewer(QMainWindow):
             if img_get:
                 self.angle = angle
                 QApplication.processEvents()
-                if self.combo_viewer.currentText() == "Three.js":
-                    self.view.load(QUrl("http://{}:{}/index_threejs.html?angle={}&zoom={}&controls_visible={}".format(self.httpd.server_host, PORT, self.angle, self.zoom, self.controls_visible)))
-                else:
-                    self.view.load(QUrl("http://{}:{}/index_pannellum.html?angle={}&zoom={}&controls_visible={}".format(self.httpd.server_host, PORT, self.angle, self.zoom, self.controls_visible)))
+                page = "index_threejs.html" if self.combo_viewer.currentText() == "Three.js" else "index_pannellum.html"
+                url = "http://{}:{}/{}?angle={}&zoom={}&controls_visible={}".format(
+                    self.httpd.server_host, PORT, page, self.angle, self.zoom, self.controls_visible)
+                if self.view is None:
+                    url += "&silent_mode=1"
+                self.load_url(url)
             else:
-                self.view.load(QUrl("http://{}:{}/index_error.html".format(self.httpd.server_host, PORT)))
+                self.load_url("http://{}:{}/index_error.html".format(self.httpd.server_host, PORT))
             self.pano_loaded = True
             self.pbar.reset()
 

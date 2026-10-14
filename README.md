@@ -1,8 +1,8 @@
-# Panorama Viewer (Qt6)
+# Panorama Viewer NG
 
 A QGIS plugin for viewing 360° panoramic photos (photospheres) directly in QGIS, with a live direction sector on the map. Works on **QGIS 3.x (Qt5)** and **QGIS 4.x (Qt6)**. Built on [Pannellum](https://pannellum.org/) and [Three.js](https://threejs.org/).
 
-This is a QGIS 4 / Qt6 port of [Panorama Viewer](https://github.com/pavelpereverzev/panorama_viewer) by Pavel Pereverzev.
+Panorama Viewer NG is the next generation of [Panorama Viewer](https://github.com/pavelpereverzev/panorama_viewer) by Pavel Pereverzev, ported to QGIS 4 / Qt6 with new features.
 
 ## Features
 
@@ -57,13 +57,13 @@ Where QGIS allows it, the plugin also starts the embedded browser with `--ignore
 ## Building the plugin zip
 
 ```bash
-git archive --prefix=panorama_viewer_qt6/ -o panorama_viewer_qt6.zip HEAD
+git archive --prefix=panorama_viewer_ng/ -o panorama_viewer_ng.zip HEAD
 ```
 
 Install it in QGIS via **Plugins → Manage and Install Plugins → Install from ZIP**.
 
 ## Credits and license
 
-Original plugin © 2023 Pavel Pereverzev. QGIS 4 / Qt6 port © 2026 Theo Gatsios.
+Original plugin © 2023 Pavel Pereverzev. Panorama Viewer NG © 2026 Theo Gatsios.
 
 Licensed under the GNU General Public License v3.0 or later, see [LICENSE](LICENSE). Bundled libraries (Pannellum, three.js) are MIT-licensed, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

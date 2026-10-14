@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- Panorama Viewer (Qt6) - panorama path resolution
+ Panorama Viewer NG - panorama path resolution
                                  A QGIS plugin
         copyright            : (C) 2026 by Theo Gatsios
         email                : theogat@protonmail.com

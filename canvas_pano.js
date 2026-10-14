@@ -1,6 +1,6 @@
 /*
  * CanvasPano - a small equirectangular panorama viewer that needs no WebGL.
- * Part of Panorama Viewer (Qt6), (C) 2026 Theo Gatsios, GPL-3.0-or-later.
+ * Part of Panorama Viewer NG, (C) 2026 Theo Gatsios, GPL-3.0-or-later.
  *
  * Renders by reprojecting every screen pixel onto the source image on a plain
  * 2D canvas, so it works in browsers where WebGL / GPU access is disabled.

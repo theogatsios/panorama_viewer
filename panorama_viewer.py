@@ -10,7 +10,7 @@
         git sha              : $Format:%H$
         copyright            : (C) 2023 by Pavel Pereverzev
         email                : pasha004@yandex.ru
-        copyright            : (C) 2026 by Theo Gatsios (QGIS 4 / Qt6 port)
+        copyright            : (C) 2026 by Theo Gatsios (Panorama Viewer NG)
         email                : theogat@protonmail.com
  ***************************************************************************/
 
@@ -63,7 +63,7 @@ class PanoramaViewer:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&Panorama Viewer (Qt6)')
+        self.menu = self.tr(u'&Panorama Viewer NG')
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -166,7 +166,7 @@ class PanoramaViewer:
         icon_path = os.path.join(self.plugin_dir, "icon.png")
         self.add_action(
             icon_path,
-            text=self.tr(u'Panorama Viewer (Qt6)'),
+            text=self.tr(u'Panorama Viewer NG'),
             callback=self.run,
             parent=self.iface.mainWindow())
 
@@ -185,7 +185,7 @@ class PanoramaViewer:
             self.plugin_is_opened = False
         for action in self.actions:
             self.iface.removePluginMenu(
-                self.tr(u'&Panorama Viewer (Qt6)'),
+                self.tr(u'&Panorama Viewer NG'),
                 action)
             self.iface.removeToolBarIcon(action)
 
@@ -194,7 +194,7 @@ class PanoramaViewer:
         if not self.plugin_is_opened:
             if WEB_BACKEND is None:
                 self.iface.messageBar().pushMessage(
-                    "Panorama Viewer (Qt6)",
+                    "Panorama Viewer NG",
                     "Embedded viewer unavailable, panoramas will open in your browser. "
                     "The plugin panel shows how to fix this.",
                     level=MSG_INFO, duration=8)

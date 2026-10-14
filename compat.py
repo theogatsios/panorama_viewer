@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- Panorama Viewer (Qt6) - compatibility layer
+ Panorama Viewer NG - compatibility layer
                                  A QGIS plugin
         copyright            : (C) 2026 by Theo Gatsios
         email                : theogat@protonmail.com

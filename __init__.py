@@ -9,7 +9,7 @@
         begin                : 2023-05-26
         copyright            : (C) 2023 by Pavel Pereverzev
         email                : pasha004@yandex.ru
-        copyright            : (C) 2026 by Theo Gatsios (QGIS 4 / Qt6 port)
+        copyright            : (C) 2026 by Theo Gatsios (Panorama Viewer NG)
         email                : theogat@protonmail.com
         git sha              : $Format:%H$
  ***************************************************************************/

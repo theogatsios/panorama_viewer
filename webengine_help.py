@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- Panorama Viewer (Qt6) - help panel for missing Qt WebEngine
+ Panorama Viewer NG - help panel for missing Qt WebEngine
                                  A QGIS plugin
         copyright            : (C) 2026 by Theo Gatsios
         email                : theogat@protonmail.com

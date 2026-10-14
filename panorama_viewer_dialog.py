@@ -10,7 +10,7 @@
         git sha              : $Format:%H$
         copyright            : (C) 2023 by Pavel Pereverzev
         email                : pasha004@yandex.ru
-        copyright            : (C) 2026 by Theo Gatsios (QGIS 4 / Qt6 port)
+        copyright            : (C) 2026 by Theo Gatsios (Panorama Viewer NG)
         email                : theogat@protonmail.com
  ***************************************************************************/
 
@@ -258,7 +258,7 @@ class PanoramaViewerDialog(QDockWidget):
         QDockWidget.__init__(self)
         self.wrapper = wrapper
         self.resize(480, 480)
-        self.setWindowTitle("Panorama Viewer (Qt6)")
+        self.setWindowTitle("Panorama Viewer NG")
         self.setWindowFlags(Qt.WindowType.Tool)
 
         # variables
@@ -615,7 +615,7 @@ class PanoramaViewer(QMainWindow):
             self.combo_viewer.setCurrentIndex(idx)
         bar = iface.messageBar()
         item = bar.createMessage(
-            "Panorama Viewer (Qt6)",
+            "Panorama Viewer NG",
             "WebGL isn't available in QGIS's embedded browser on this system, so the "
             "plugin switched to the Canvas viewer. For the smoothest view you can also "
             "open panoramas in your web browser.")
@@ -635,9 +635,9 @@ class PanoramaViewer(QMainWindow):
     def notify(self, message):
         """Non-blocking warning in the QGIS message bar (safe in auto-update mode)."""
         try:
-            iface.messageBar().pushWarning("Panorama Viewer (Qt6)", message)
+            iface.messageBar().pushWarning("Panorama Viewer NG", message)
         except Exception:
-            print("Panorama Viewer (Qt6):", message)
+            print("Panorama Viewer NG:", message)
 
     def load_url(self, url):
         """Load a page in the embedded view, or in the system browser

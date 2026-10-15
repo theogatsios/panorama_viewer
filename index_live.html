@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panorama Viewer NG</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #111; overflow: hidden;
+                     font: 15px system-ui, sans-serif; color: #ddd; }
+        #frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+        #status {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; background: rgba(0, 0, 0, 0.7); padding: 16px 22px;
+            border-radius: 8px; max-width: 80%; line-height: 1.5;
+        }
+        #status small { color: #999; }
+        #badge {
+            position: absolute; top: 10px; left: 10px; padding: 4px 10px; border-radius: 12px;
+            background: rgba(0, 0, 0, 0.55); font-size: 12px; color: #bbb; pointer-events: none;
+        }
+        #badge::before { content: ""; display: inline-block; width: 8px; height: 8px;
+                         border-radius: 50%; margin-right: 6px; background: #3cb371; }
+        #badge.off::before { background: #e5383b; }
+    </style>
+</head>
+<body>
+<iframe id="frame" title="Panorama"></iframe>
+<div id="status">Connecting to QGIS&hellip;</div>
+<div id="badge" class="off">QGIS</div>
+
+<script>
+(function () {
+    "use strict";
+    var frame = document.getElementById("frame");
+    var statusBox = document.getElementById("status");
+    var badge = document.getElementById("badge");
+    var VIEW_INTERVAL = 100;   // ms, max rate of view updates sent to QGIS
+    var pendingView = null, viewTimer = null;
+
+    function showStatus(html) { statusBox.innerHTML = html; statusBox.style.display = ""; }
+    function hideStatus() { statusBox.style.display = "none"; }
+
+    function sendView() {
+        viewTimer = null;
+        if (!pendingView) return;
+        var body = pendingView; pendingView = null;
+        fetch("/live/view", { method: "POST", body: body }).catch(function () {});
+    }
+
+    // Forward the viewer's view changes (it reports them via console.log) to QGIS
+    function hookViewer() {
+        var w;
+        try { w = frame.contentWindow; if (!w || !w.document) return; } catch (e) { return; }
+        var orig = w.console.log;
+        w.console.log = function (msg) {
+            if (typeof msg === "string" && msg.charAt(0) === "{" && msg.indexOf('"yaw"') >= 0) {
+                pendingView = msg;
+                if (!viewTimer) viewTimer = setTimeout(sendView, VIEW_INTERVAL);
+            }
+            return orig.apply(w.console, arguments);
+        };
+        // "open in browser" makes no sense here: we already are the browser
+        var b = w.document.getElementById("toggle_open_in_browser");
+        if (b) b.style.display = "none";
+    }
+    frame.addEventListener("load", hookViewer);
+
+    function handle(cmd) {
+        if (cmd.type === "load") {
+            hideStatus();
+            frame.src = cmd.url;
+            if (cmd.title) document.title = cmd.title + " \u2013 Panorama Viewer NG";
+        } else if (cmd.type === "rotate") {
+            try { frame.contentWindow.rotateToAngle(cmd.angle); } catch (e) {}
+        } else if (cmd.type === "message") {
+            frame.removeAttribute("src");
+            showStatus(cmd.html);
+        }
+    }
+
+    var source = new EventSource("/live/events");
+    source.onopen = function () {
+        badge.classList.remove("off");
+        badge.textContent = "Linked to QGIS";
+        if (!frame.getAttribute("src")) {
+            showStatus("Select a feature in QGIS to show its panorama here.<br>" +
+                       "<small>This window follows the selection in QGIS.</small>");
+        }
+    };
+    source.onmessage = function (e) {
+        try { handle(JSON.parse(e.data)); } catch (err) {}
+    };
+    source.onerror = function () {
+        badge.classList.add("off");
+        badge.textContent = "QGIS not connected";
+        if (!frame.getAttribute("src")) {
+            showStatus("Waiting for QGIS&hellip;<br><small>Open the Panorama Viewer NG panel " +
+                       "in QGIS. This window reconnects automatically.</small>");
+        }
+    };
+})();
+</script>
+</body>
+</html>

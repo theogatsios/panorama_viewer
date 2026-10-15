@@ -11,6 +11,7 @@ Panorama Viewer NG is the next generation of [Panorama Viewer](https://github.co
 - Set the initial view angle from a layer field
 - Choose between three viewers: Pannellum, Three.js, or Canvas, which needs no WebGL or GPU
 - Expanded view and "open in browser" buttons on the viewer
+- Browser window mode for a second screen: a browser window that follows your selection and turns the direction sector on the map
 
 ## Requirements
 
@@ -26,6 +27,18 @@ On QGIS 4.x (Qt6) it uses QtWebEngine, which needs the Qt WebEngine Python bindi
 4. Select a feature on the map and click **View panorama**.
 
 **Auto-update view** loads the panorama on every selection. **Show directions** draws the view sector on the map (the project CRS must be projected, not geographic). **Angles field** sets each panorama's initial heading. Hovering the bottom-right corner of the viewer shows buttons to open the panorama in your browser or to hide the controls and maximise the viewer.
+
+## Browser window (second screen)
+
+Tick **Browser window** in the plugin panel to show panoramas in your web browser instead of inside QGIS. A window opens once; drag it to your second screen and keep it there.
+
+- With **Auto-update view** on, every feature you select replaces the panorama in that same window. No new tabs are opened.
+- Looking around in the browser window turns the direction sector on the QGIS map, as with the built-in viewer.
+- The badge in the top-left corner shows whether the window is linked to QGIS. If you close the window, the next selection opens it again.
+- While the browser window is used, the panel shrinks to a compact bar with the link status, **Reopen window** and **Minimize panel**. Minimize hides the panel completely, and panoramas keep following your selection. Click the Panorama Viewer NG toolbar button to bring the panel back.
+- Untick **Browser window** to bring panoramas back into the QGIS panel.
+
+If QGIS has no embedded web engine, this mode is used automatically.
 
 ## Troubleshooting
 

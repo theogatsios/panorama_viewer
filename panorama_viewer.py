@@ -202,5 +202,10 @@ class PanoramaViewer:
             self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dlg)
             self.dlg.show()
             self.plugin_is_opened = True
+        elif self.dlg is not None and not self.dlg.isVisible():
+            # panel was minimized: bring it back
+            self.dlg.show()
+            self.dlg.raise_()
         else:
-            self.iface.messageBar().pushMessage("Notification", "Plugin is already opened", level=MSG_INFO)
+            self.iface.messageBar().pushMessage("Panorama Viewer NG", "The panel is already open",
+                                                level=MSG_INFO)

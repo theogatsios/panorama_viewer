@@ -33,7 +33,13 @@ import requests
 from functools import partial
 import socket
 
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler
+try:
+    from http.server import ThreadingHTTPServer
+except ImportError:  # Python < 3.7
+    from http.server import HTTPServer as ThreadingHTTPServer
+import re
+import time
 from urllib.parse import urlparse
 
 from qgis.utils import iface
@@ -47,7 +53,7 @@ from qgis.core import (
 from qgis.gui import QgsRubberBand
 
 from qgis.PyQt import QtCore
-from qgis.PyQt.QtCore import Qt, QThread, QUrl
+from qgis.PyQt.QtCore import Qt, QThread, QUrl, QTimer
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QSurfaceFormat
 from qgis.PyQt.QtWidgets import (
     QApplication,
@@ -65,11 +71,13 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QStyle,
     QLabel,
+    QFrame,
 )
 
 from . import compat
 from .webengine_help import NoWebEngineWidget
 from . import pano_paths
+from .live_channel import LiveHub, LiveBridge, handle_live_request
 from .compat import (
     WEB_BACKEND,
     POLYGON_GEOMETRY,
@@ -175,8 +183,21 @@ class QuietHandler(SimpleHTTPRequestHandler):
     in QGIS in order to make plugin work
     """
 
+    hub = None      # set per server (see HttpDaemon.run)
+    bridge = None
+
     def log_message(self, format, *args):
         pass
+
+    def do_GET(self):
+        if self.hub is not None and handle_live_request(self, self.hub, self.bridge):
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if self.hub is not None and handle_live_request(self, self.hub, self.bridge):
+            return
+        self.send_error(405)
 
     def end_headers(self):
         # the panorama is always served as image.JPG, so never let the
@@ -197,6 +218,8 @@ class HttpDaemon(QtCore.QThread):
         self.is_running = False
         self.server_host = self.find_free_ip(PORT)
         self.setTerminationEnabled(True)
+        self.hub = LiveHub()          # external browser window channel
+        self.bridge = LiveBridge()    # created here, so it lives in the main thread
         if not self.server_host:
             raise RuntimeError("Couldn't found free IP-address in 127.x.x.x ranges")
     
@@ -215,12 +238,15 @@ class HttpDaemon(QtCore.QThread):
 
     def run(self):
         # os.chdir(self.server_path)
-        handler = partial(QuietHandler, directory=self.server_path)
-        self.server = HTTPServer((self.server_host, PORT), handler)
+        handler_cls = type("PanoHandler", (QuietHandler,), {"hub": self.hub, "bridge": self.bridge})
+        handler = partial(handler_cls, directory=self.server_path)
+        self.server = ThreadingHTTPServer((self.server_host, PORT), handler)
+        self.server.daemon_threads = True  # open live streams never block shutdown
         self.is_running = True
         self.server.serve_forever()
 
     def stop(self):
+        self.hub.close()  # ends the live streams; browser tabs show "not connected"
         if self.server:
             self.is_running = False
             try:
@@ -437,6 +463,7 @@ class PanoramaViewer(QMainWindow):
 
     def __init__(self, parent):
         super().__init__(parent=None)
+        self.dock = parent  # the QDockWidget holding this window
         
         # init settings
         self.wrapper = parent
@@ -477,7 +504,9 @@ class PanoramaViewer(QMainWindow):
         self.inspector = None
         self.view = create_web_view(self)
         self.webgl_checked = False   # WebGL availability is tested once per session
-        self.use_browser = False     # user chose "always open in browser"
+        self.live_mode = False       # panoramas go to an external browser window
+        self.live_opened_at = 0.0    # when we last opened that window
+        self.current_title = ""
         self.last_viewer_url = None
         if self.view is not None and WEB_BACKEND == "webengine":
             self.view.loadFinished.connect(self.check_webgl)
@@ -503,6 +532,10 @@ class PanoramaViewer(QMainWindow):
 
 
         self.auto_update = QCheckBox("Auto-update view")
+        self.external_window = QCheckBox("Browser window")
+        self.external_window.setToolTip(
+            "Show panoramas in a separate web browser window, e.g. on a second screen.\n"
+            "The window follows your selection and turns the direction sector on the map.")
         self.show_directrions = QCheckBox("Show directions")
         self.direction_field_label = QLabel("Angles field:")
         self.direction_field = QComboBox()
@@ -510,6 +543,7 @@ class PanoramaViewer(QMainWindow):
 
         self.lt_options = QHBoxLayout()
         self.lt_options.addWidget(self.auto_update)
+        self.lt_options.addWidget(self.external_window)
         self.lt_options.addStretch(1)
 
         self.lt_options.addWidget(self.show_directrions)
@@ -518,6 +552,27 @@ class PanoramaViewer(QMainWindow):
         self.lt_options.addStretch()
 
         self.btn_find_panorama = QPushButton("View panorama")
+
+        # compact bar shown instead of the viewer while the browser window is used
+        self.live_bar = QFrame()
+        self.live_bar.setFrameShape(QFrame.Shape.StyledPanel)
+        lb = QHBoxLayout(self.live_bar)
+        lb.setContentsMargins(8, 4, 4, 4)
+        self.live_status = QLabel()
+        self.live_status.setTextFormat(Qt.TextFormat.RichText)
+        self.btn_live_reopen = QPushButton("Reopen window")
+        self.btn_live_reopen.setToolTip("Open the browser window again (e.g. after closing it)")
+        self.btn_live_minimize = QPushButton("Minimize panel")
+        self.btn_live_minimize.setToolTip(
+            "Hide this panel. Panoramas keep following your selection in the browser window.\n"
+            "Click the Panorama Viewer NG toolbar button to show the panel again.")
+        lb.addWidget(self.live_status, 1)
+        lb.addWidget(self.btn_live_reopen)
+        lb.addWidget(self.btn_live_minimize)
+        self.live_bar.hide()
+        self.live_timer = QTimer(self)
+        self.live_timer.setInterval(1500)
+        self.live_timer.timeout.connect(self.update_live_status)
 
         self.pbar = QProgressBar()
         self.pbar.setDisabled(True)
@@ -533,9 +588,12 @@ class PanoramaViewer(QMainWindow):
         else:
             self.no_view_label = NoWebEngineWidget(compat.WEB_BACKEND_ERROR)
             browser_layout.addWidget(self.no_view_label)
-            # auto-update would spawn a browser tab per selection
-            self.auto_update.setDisabled(True)
-            self.auto_update.setToolTip("Not available without an embedded web engine")
+            # without an embedded browser the external window is the only viewer
+            self.live_mode = True
+            self.external_window.setChecked(True)
+            self.external_window.setDisabled(True)
+            self.external_window.setToolTip("Panoramas are shown in your web browser "
+                                            "(no embedded web engine available)")
 
         # 2. layer-field selectors
         grid_layout.addWidget(self.lbl_layers,    1, 1, 1, 1)
@@ -558,6 +616,7 @@ class PanoramaViewer(QMainWindow):
 
         # 4. adding all layouts 
         centralLayout.addLayout(browser_layout)
+        centralLayout.addWidget(self.live_bar)
         centralLayout.addLayout(grid_layout)
         centralLayout.addLayout(control_layout)
         centralWidget.setLayout(centralLayout)
@@ -580,7 +639,13 @@ class PanoramaViewer(QMainWindow):
 
         # launching web server
         self.httpd = HttpDaemon(self, base_folder)
+        self.httpd.bridge.view_changed.connect(self.on_live_view)
         self.httpd.start()
+        self.external_window.toggled.connect(self.set_live_mode)
+        self.btn_live_reopen.clicked.connect(lambda: self.open_live_window(force=True))
+        self.btn_live_minimize.clicked.connect(self.minimize_panel)
+        if self.live_mode:  # no embedded engine: browser window from the start
+            self.apply_live_layout(True)
 
 
         if self.inspector is not None:
@@ -619,16 +684,9 @@ class PanoramaViewer(QMainWindow):
             "WebGL isn't available in QGIS's embedded browser on this system, so the "
             "plugin switched to the Canvas viewer. For the smoothest view you can also "
             "open panoramas in your web browser.")
-        btn_once = QPushButton("Open in browser")
-
-        def open_once():
-            if self.last_viewer_url:
-                url = self.last_viewer_url
-                if "silent_mode=1" not in url:
-                    url += "&silent_mode=1"
-                QDesktopServices.openUrl(QUrl(url))
-
-        btn_once.clicked.connect(open_once)
+        btn_once = QPushButton("Use browser window")
+        btn_once.setToolTip("Show panoramas in a browser window that follows your selection")
+        btn_once.clicked.connect(lambda: self.external_window.setChecked(True))
         item.layout().addWidget(btn_once)
         bar.pushWidget(item, compat.MSG_INFO, 15)
 
@@ -639,20 +697,94 @@ class PanoramaViewer(QMainWindow):
         except Exception:
             print("Panorama Viewer NG:", message)
 
+    def live_url(self):
+        return "http://{}:{}/index_live.html".format(self.httpd.server_host, PORT)
+
+    def open_live_window(self, force=False):
+        """Open the external window, unless one is connected (or just opened)."""
+        if not force and (self.httpd.hub.clients > 0 or time.time() - self.live_opened_at < 10):
+            return
+        self.live_opened_at = time.time()
+        QDesktopServices.openUrl(QUrl(self.live_url()))
+
+    def set_live_mode(self, on):
+        """Checkbox handler: move panoramas to / back from the browser window."""
+        self.live_mode = bool(on)
+        self.apply_live_layout(self.live_mode)
+        if on:
+            if self.view is not None:
+                self.view.setHtml("<html><body style='background:#202124'></body></html>")
+            if self.last_viewer_url:
+                self.load_url(self.last_viewer_url)  # current panorama follows to the window
+            self.open_live_window(force=True)
+        else:
+            self.httpd.hub.publish({"type": "message", "html":
+                                    "Panoramas are shown inside QGIS again.<br><small>Tick "
+                                    "\"Browser window\" in QGIS to use this window.</small>"})
+            if self.last_viewer_url:
+                self.load_url(self.last_viewer_url)
+
+    def apply_live_layout(self, on):
+        """Compact panel while the browser window shows the panoramas."""
+        if self.view is not None:
+            self.view.setVisible(not on)
+        self.live_bar.setVisible(on)
+        if on:
+            self.update_live_status()
+            self.live_timer.start()
+        else:
+            self.live_timer.stop()
+        if self.dock is not None and QDockWidget.isFloating(self.dock):
+            QTimer.singleShot(0, self.dock.adjustSize)
+
+    def update_live_status(self):
+        n = self.httpd.hub.clients if self.httpd else 0
+        if n:
+            self.live_status.setText("<span style='color:#3cb371'>&#9679;</span> "
+                                     "Browser window linked")
+        else:
+            self.live_status.setText("<span style='color:#e5383b'>&#9679;</span> "
+                                     "Browser window not open")
+
+    def minimize_panel(self):
+        """Hide the dock but keep the plugin (selection sync, server) running."""
+        if self.dock is None:
+            return
+        self.dock.hide()
+        try:
+            iface.messageBar().pushMessage(
+                "Panorama Viewer NG",
+                "The panel is minimized. Panoramas keep following your selection in the "
+                "browser window. Click the Panorama Viewer NG toolbar button to show it again.",
+                level=compat.MSG_INFO, duration=6)
+        except Exception:
+            pass
+
+    def on_live_view(self, msg):
+        """View change reported by the external window (runs in the main thread)."""
+        if self.live_mode:
+            handle_js_message(self, msg)
+
     def load_url(self, url):
-        """Load a page in the embedded view, or in the system browser
-        when no embedded web engine is available."""
+        """Show a viewer page in the embedded view or in the external window."""
         if "/index_error.html" not in url:
             self.last_viewer_url = url
-        if self.view is not None and not self.use_browser:
+        if self.live_mode:
+            q = QUrl(url)
+            rel = q.path().lstrip("/") + ("?" + q.query() if q.query() else "")
+            rel += ("&" if "?" in rel else "?") + "t={}".format(int(time.time() * 1000))
+            self.httpd.hub.publish({"type": "load", "url": rel, "title": self.current_title})
+            self.open_live_window()
+        elif self.view is not None:
             self.view.load(QUrl(url))
-        else:
-            if self.view is not None and "silent_mode=1" not in url:
-                url += "&silent_mode=1"
-            QDesktopServices.openUrl(QUrl(url))
 
     def run_js(self, code):
-        """Run JavaScript in the current page on any backend."""
+        """Run JavaScript in the current viewer, embedded or external."""
+        if self.live_mode:
+            m = re.match(r"\s*rotateToAngle\(\s*(-?[\d.]+)\s*\)", code)
+            if m:
+                self.httpd.hub.publish({"type": "rotate", "angle": float(m.group(1))})
+            return
         if self.view is None:
             return
         if WEB_BACKEND == "webkit":
@@ -873,6 +1005,7 @@ class PanoramaViewer(QMainWindow):
             
             # panorama path check: local / UNC paths, file://, smb:// and http(s)://
             source = pano_paths.resolve(cf_attr)
+            self.current_title = os.path.basename(str(cf_attr or "").rstrip("/\\"))
             getter = GetPanorama(self)
             try:
                 if source.kind == "local":

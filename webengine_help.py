@@ -39,7 +39,7 @@ from qgis.PyQt.QtWidgets import (
 
 from .compat import QT6
 
-TROUBLESHOOTING_URL = "https://github.com/theogatsios/panorama_viewer#troubleshooting"
+TROUBLESHOOTING_URL = "https://github.com/theogatsios/panorama_viewer_ng#troubleshooting"
 
 
 class Fix:

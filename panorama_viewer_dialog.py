@@ -589,11 +589,12 @@ class PanoramaViewer(QMainWindow):
             self.no_view_label = NoWebEngineWidget(compat.WEB_BACKEND_ERROR)
             browser_layout.addWidget(self.no_view_label)
             # without an embedded browser the external window is the only viewer
+            # (a locked, ticked checkbox looked like a bug, so it's hidden and
+            # the status bar explains instead)
             self.live_mode = True
             self.external_window.setChecked(True)
-            self.external_window.setDisabled(True)
-            self.external_window.setToolTip("Panoramas are shown in your web browser "
-                                            "(no embedded web engine available)")
+            self.external_window.hide()
+            self.combo_viewer.setToolTip("Viewer used in the browser window")
 
         # 2. layer-field selectors
         grid_layout.addWidget(self.lbl_layers,    1, 1, 1, 1)
@@ -739,12 +740,16 @@ class PanoramaViewer(QMainWindow):
 
     def update_live_status(self):
         n = self.httpd.hub.clients if self.httpd else 0
-        if n:
-            self.live_status.setText("<span style='color:#3cb371'>&#9679;</span> "
-                                     "Browser window linked")
+        dot = "<span style='color:{}'>&#9679;</span> ".format("#3cb371" if n else "#e5383b")
+        state = "Browser window linked" if n else "Browser window not open"
+        if self.view is None:
+            # no embedded engine: the browser window is the only viewer
+            self.live_status.setText(dot + state + "<br><small>Panoramas can only be shown "
+                                     "in the browser until Qt WebEngine is installed (see above)."
+                                     "</small>")
+            self.live_status.setToolTip("")
         else:
-            self.live_status.setText("<span style='color:#e5383b'>&#9679;</span> "
-                                     "Browser window not open")
+            self.live_status.setText(dot + state)
 
     def minimize_panel(self):
         """Hide the dock but keep the plugin (selection sync, server) running."""

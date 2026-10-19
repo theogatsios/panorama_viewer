@@ -125,19 +125,28 @@ def detect_fix():
 
     # --- Windows
     if sys.platform == "win32":
-        osgeo = os.environ.get("OSGEO4W_ROOT") or (
-            sys.prefix if "osgeo4w" in sys.prefix.lower() else "")
-        if osgeo:
-            return Fix("Windows (OSGeo4W)", steps=(
-                "Close QGIS, run the OSGeo4W Network Installer, choose "
-                "\"Advanced Install\", search for \"webengine\" and install the "
-                "{} WebEngine package that matches your QGIS. Then start QGIS again."
-            ).format(pyqt))
-        return Fix("Windows", steps=(
-            "This QGIS installer does not include Qt WebEngine. Install QGIS with the "
-            "OSGeo4W Network Installer and add the {} WebEngine package, or keep using "
-            "browser mode."
-        ).format(pyqt))
+        root = os.environ.get("OSGEO4W_ROOT", "")
+        if not root:
+            low = sys.prefix.lower()
+            if "\\apps\\" in low:
+                root = sys.prefix[:low.index("\\apps\\")]
+        pkg = "python3-pyqt6-webengine" if QT6 else "python3-pyqtwebengine"
+        standalone = "program files" in root.lower() and "qgis" in os.path.basename(root.rstrip("\\")).lower()
+        if standalone:
+            return Fix("Windows (QGIS standalone installer)", steps=(
+                "This QGIS was installed with the standalone installer ({}), which can't "
+                "add packages. Install QGIS with the OSGeo4W Network Installer instead "
+                "(it includes {}), or keep using the browser window."
+            ).format(root, pkg))
+        return Fix("Windows (OSGeo4W, root: {})".format(root or "unknown"), command=pkg, steps=(
+            "1. Close QGIS and run osgeo4w-setup.exe.\n"
+            "2. Choose Advanced Install, then Install from Internet.\n"
+            "3. Set Root Directory to exactly:  {}\n"
+            "   (the Local Package Directory is only a download cache; any folder is fine)\n"
+            "4. On Select Packages, search for \"webengine\" and click \"Skip\" next to "
+            "the package name above so it shows a version number, then finish the installer.\n"
+            "5. Start QGIS from the same OSGeo4W installation."
+        ).format(root or "the folder that contains your QGIS 'apps' and 'bin' folders"))
 
     # --- macOS and anything else
     if sys.platform == "darwin":
@@ -221,7 +230,10 @@ class NoWebEngineWidget(QWidget):
         detected.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(detected)
 
-        if self.fix.command:
+        if self.fix.command and self.fix.platform.startswith("Windows"):
+            lay.addWidget(QLabel("Package to install with the OSGeo4W installer:"))
+            lay.addLayout(_command_row(self.fix.command))
+        elif self.fix.command:
             lay.addWidget(QLabel("Run this in a terminal, then restart QGIS:"))
             lay.addLayout(_command_row(self.fix.command))
         if self.fix.steps:

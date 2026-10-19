@@ -52,10 +52,13 @@ On QGIS 4 (Qt6) the in-QGIS viewer needs the Qt WebEngine Python bindings. When 
 | Fedora | `sudo dnf install python3-pyqt6-webengine` |
 | Arch / Manjaro | `sudo pacman -S python-pyqt6-webengine` |
 | openSUSE | find the name with `zypper search -s WebEngine \| grep -i pyqt` |
-| Windows (OSGeo4W) | OSGeo4W Network Installer → Advanced Install → search "webengine" |
+| Windows (OSGeo4W) | Run `osgeo4w-setup.exe` → Advanced Install → set **Root Directory** to the folder QGIS is installed in (e.g. `C:\\OSGeo4W`) → install `python3-pyqt6-webengine`. The "Local Package Directory" is only a download cache. |
+| Windows (standalone installer) | Can't add packages; install QGIS via the OSGeo4W Network Installer, or use the browser window |
 | Flatpak | not possible inside the Flatpak; install QGIS from your distribution or qgis.org |
 
 Restart QGIS after installing.
+
+Even with Qt WebEngine installed, some QGIS 4 builds (Windows OSGeo4W and Ubuntu included) start the embedded browser without GPU access, so WebGL is unavailable inside QGIS. The plugin then switches to the Canvas viewer automatically. For full quality, use the browser window.
 
 Don't install `PyQt6-WebEngine` with **pip** into a system QGIS. The pip wheel bundles its own Qt, which won't match the Qt QGIS is built with and usually crashes QGIS.
 
